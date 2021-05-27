@@ -1,7 +1,9 @@
-from numpy.core.numeric import NaN
 import simpy
 import random
 import pandas as pd
+
+from csv import writer
+from numpy.core.numeric import NaN
 
 # Set up basic parameter 
 
@@ -29,11 +31,13 @@ class Machine():
         # Set default name
         self.machine_name = machine_name
     
+        # Set initial machine state
+        self.machine_state = 0
+
         # Initialize departure time
         self.last_departure_time = 0
         # Initialize interdeparture time
         self.interdeparture_time = 0
-
 
         # Get name of upstream buffer
         self.buffer_upstream = 'b{}'.format(int(self.machine_name[1:])-1)
@@ -48,16 +52,19 @@ class Machine():
         '''Run the machining process to consume material and produce (semi-) finished goods.'''
 
         while True:
+
+            # Change machine state to starved 
+            self.machine_state = 1
        
             # Get material from upstream buffer
             if self.buffer_upstream != 'b0': # infinite b0
                 yield env.all_buffer[self.buffer_upstream].get(1)
-
+            
+            # Change machine state to active 
+            self.machine_state = 0
+            
             # Machining 
             yield env.timeout(self.apply_variability(self.process_time))
-
-            # Put finished good into downstream buffer
-            yield env.all_buffer[self.buffer_downstream].put(1)
 
             # Calculate time since last finished product (inter-departure time)
             self.interdeparture_time = env.now - self.last_departure_time 
@@ -65,6 +72,11 @@ class Machine():
             # Reset last departure time for the next product
             self.last_departure_time = env.now 
 
+            # Change machine state to blocked 
+            self.machine_state = 2
+
+            # Put finished good into downstream buffer
+            yield env.all_buffer[self.buffer_downstream].put(1)
 
 class Factory_Simulation():
 
@@ -103,8 +115,12 @@ class Factory_Simulation():
         return [buffer.level for buffer in self.env.all_buffer.values()]
 
     def get_interdeparture_times(self):
-        ''' Returns  list of the current interdeparture times of all machines.'''
+        ''' Returns a list of the current interdeparture times of all machines.'''
         return [machine.interdeparture_time for machine in self.all_machines.values()]
+
+    def get_machine_states(self):
+        ''' Returns a list of the current machine states of all machines.'''
+        return [machine.machine_state for machine in self.all_machines.values()]
 
     def reset_interdeparture_times(self):
         ''' Resets the interdeparture time for all machines back to zero.'''
@@ -114,23 +130,24 @@ class Factory_Simulation():
 # Set up factory
 factory = Factory_Simulation(PROCESS_TIMES)
 
-# Set up result dataframe
-columns = ['t'] + ['{}_level'.format(buffer) for buffer in factory.buffer_names] + ['itv_{}'.format(machine) for machine in factory.all_machines]
-results = pd.DataFrame(columns=columns)
-results.loc[0] = [0] * 22
-
 # Run all machines
 for name, machine in factory.all_machines.items(): 
     factory.env.process(machine.run_machine(factory.env))
 
+from tqdm import tqdm
+
 # Iter over simulation time 
-for t in range(1, SIMULATION_TIME):
-    print(t)
+for t in tqdm(range(1, SIMULATION_TIME)):
+
     # Reset ITV
     factory.reset_interdeparture_times()
+    
     # Run env until t
     factory.env.run(until=t)
-    # Save observations to df
-    results.loc[len(results)+1] = [t] + factory.get_buffer_level() + factory.get_interdeparture_times()
-
-results.to_csv('results.csv')
+    
+    # Save results as csv
+    with open('result.csv', 'a+', newline='') as result_file:
+        new_line = [t] + factory.get_buffer_level() + factory.get_machine_states() + factory.get_interdeparture_times()
+        writer_object = writer(result_file)
+        writer_object.writerow(new_line)
+        result_file.close()
