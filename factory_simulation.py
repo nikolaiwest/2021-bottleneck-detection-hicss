@@ -5,7 +5,8 @@ import pandas as pd
 from csv import writer
 from numpy.core.numeric import NaN
 
-# Set up basic parameter 
+##############################
+### Set up basic parameter ###
 
 # Time steps to run the simulation for
 SIMULATION_TIME = 100000
@@ -16,10 +17,14 @@ BUFFER_CAPACITY = 10
 # Initial capacity of all buffers 
 INITIAL_CAPACITY = 1
 
+# Std. dev. for process time variation
 STANDARD_DEVIATION = 0.1
 
 # Process times in the scenario
-PROCESS_TIMES = [10, 10, 10, 15, 10, 10, 15, 10, 10, 10]
+PROCESS_TIMES = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+
+# Set seed to default number
+random.seed(42)
 
 class Machine():
 
@@ -147,7 +152,9 @@ for t in tqdm(range(1, SIMULATION_TIME)):
     
     # Save results as csv
     with open('result.csv', 'a+', newline='') as result_file:
+        # Get observations as list
         new_line = [t] + factory.get_buffer_level() + factory.get_machine_states() + factory.get_interdeparture_times()
+        # Append list to csv 
         writer_object = writer(result_file)
         writer_object.writerow(new_line)
         result_file.close()
